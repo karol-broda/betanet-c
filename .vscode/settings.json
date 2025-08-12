@@ -1,0 +1,19 @@
+{
+    "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
+    "files.associations": {
+        "*.c": "c"
+    },
+    "extensions.recommendations": [
+        "ms-vscode.cpptools",
+        "ms-vscode.cmake-tools"
+    ],
+    "cmake.kits": [
+        {
+            "name": "Nix Clang",
+            "compilers": {
+                "C": "clang",
+                "CXX": "clang++"
+            }
+        }
+    ]
+}
