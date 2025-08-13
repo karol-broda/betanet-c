@@ -1,12 +1,12 @@
-#include <stdarg.h>
 #include <stddef.h>
 #include <setjmp.h>
+#include <stdarg.h>
 #include <cmocka.h>
 
 #include "betanet.h"
 
 static void test_init_cleanup(void **state) {
-    (void) state; // unused
+    (void)state; // unused
 
     assert_int_equal(betanet_init(NULL), 0);
     betanet_cleanup();

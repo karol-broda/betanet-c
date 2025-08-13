@@ -1,0 +1,72 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "format code",
+            "type": "shell",
+            "command": "cmake",
+            "args": ["--build", "build", "--target", "format"],
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "silent",
+                "focus": false,
+                "panel": "shared"
+            },
+            "problemMatcher": [],
+            "detail": "format all source files with clang-format"
+        },
+        {
+            "label": "check format",
+            "type": "shell",
+            "command": "cmake",
+            "args": ["--build", "build", "--target", "check-format"],
+            "group": "test",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            },
+            "problemMatcher": [],
+            "detail": "check if source files are properly formatted"
+        },
+        {
+            "label": "lint code",
+            "type": "shell",
+            "command": "cmake",
+            "args": ["--build", "build", "--target", "lint"],
+            "group": "test",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            },
+            "problemMatcher": {
+                "owner": "clang-tidy",
+                "fileLocation": ["relative", "${workspaceFolder}"],
+                "pattern": {
+                    "regexp": "^(.+):(\\d+):(\\d+):\\s+(warning|error|note):\\s+(.+)\\s+\\[(.+)\\]$",
+                    "file": 1,
+                    "line": 2,
+                    "column": 3,
+                    "severity": 4,
+                    "message": 5,
+                    "code": 6
+                }
+            },
+            "detail": "run clang-tidy static analysis on source files"
+        },
+        {
+            "label": "build and lint",
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "CMake: build",
+                "lint code"
+            ],
+            "group": "build",
+            "detail": "build project and run linting"
+        }
+    ]
+}

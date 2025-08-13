@@ -19,8 +19,17 @@
             cmake
             pkg-config
 
+            # debugging
+            # valgrind
+            gdb
+
+            # linting and formatting
+            clang-tools
+            clang
+
             # required dependencies
             openssl
+            libsodium
             cmocka
 
             # future dependencies

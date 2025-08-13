@@ -5,7 +5,9 @@
     },
     "extensions.recommendations": [
         "ms-vscode.cpptools",
-        "ms-vscode.cmake-tools"
+        "ms-vscode.cmake-tools",
+        "llvm-vs-code-extensions.vscode-clangd",
+        "arrterian.nix-env-selector"
     ],
     "cmake.kits": [
         {
@@ -15,5 +17,44 @@
                 "CXX": "clang++"
             }
         }
-    ]
+    ],
+    
+    // formatting configuration
+    "editor.formatOnSave": true,
+    "editor.defaultFormatter": "ms-vscode.cpptools",
+    "[c]": {
+        "editor.defaultFormatter": "ms-vscode.cpptools",
+        "editor.formatOnSave": true
+    },
+    
+    // clang-format configuration
+    "C_Cpp.formatting": "clangFormat",
+    "C_Cpp.clang_format_style": "file",
+    "C_Cpp.clang_format_fallbackStyle": "LLVM",
+    
+    // clangd configuration (alternative to cpptools intellisense)
+    "clangd.path": "clangd",
+    "clangd.arguments": [
+        "--compile-commands-dir=build",
+        "--background-index",
+        "--clang-tidy",
+        "--completion-style=detailed",
+        "--header-insertion=iwyu"
+    ],
+    
+    // disable cpptools intellisense when using clangd
+    "C_Cpp.intelliSenseEngine": "Disabled",
+    
+    // tasks and build configuration
+    "cmake.buildDirectory": "${workspaceFolder}/build",
+    "cmake.generator": "Unix Makefiles",
+    
+    // file watching
+    "files.watcherExclude": {
+        "**/build/**": true,
+        "**/.git/**": true
+    },
+    "nixEnvSelector.suggestion": false,
+    "nixEnvSelector.useFlakes": true,
+    "nixEnvSelector.nixFile": "${workspaceFolder}/flake.nix"
 }
