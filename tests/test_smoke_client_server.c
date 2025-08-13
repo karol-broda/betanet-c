@@ -44,7 +44,7 @@ static void test_smoke_frame_header_parsing(void **state) {
     // frame should be: [00 00 2A 00 01] + payload
     assert_int_equal(frame[0], 0x00);  // length[23:16]
     assert_int_equal(frame[1], 0x00);  // length[15:8] 
-    assert_int_equal(frame[2], 0x2A);  // length[7:0] = 42 (26 payload + 16 auth tag)
+        assert_int_equal(frame[2], msg_len);  // length[7:0] = 26 (payload only)
     assert_int_equal(frame[3], 0x00);  // frame type = HTX_FRAME_TYPE_STREAM
     assert_int_equal(frame[4], 0x01);  // stream_id = 1 (varint encoded)
 
@@ -60,7 +60,7 @@ static void test_smoke_frame_header_parsing(void **state) {
     // test with 5 bytes (the fix) - should succeed  
     header_len = htx_deserialize_frame_header(frame, 5, &length, &type, &stream_id);
     assert_int_equal(header_len, 5);
-    assert_int_equal(length, 42);
+        assert_int_equal(length, msg_len);
     assert_int_equal(type, 0);  // HTX_FRAME_TYPE_STREAM
     assert_int_equal(stream_id, 1);
 

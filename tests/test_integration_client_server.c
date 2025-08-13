@@ -374,7 +374,7 @@ static void test_regression_header_parsing_bug(void **state) {
     // verify the frame header is exactly what we expect
     assert_int_equal(frame[0], 0x00);  // length high byte
     assert_int_equal(frame[1], 0x00);  // length middle byte  
-    assert_int_equal(frame[2], 0x2A);  // length low byte (42 decimal = 0x2A)
+    assert_int_equal(frame[2], payload_len);  // length low byte (26 decimal = 0x1A)
     assert_int_equal(frame[3], 0x00);  // frame type (HTX_FRAME_TYPE_STREAM = 0)
     assert_int_equal(frame[4], 0x01);  // stream_id varint (1)
     
@@ -390,7 +390,7 @@ static void test_regression_header_parsing_bug(void **state) {
     // test with 5 bytes (the fix - should succeed)
     header_len = htx_deserialize_frame_header(frame, 5, &parsed_length, &parsed_type, &parsed_stream_id);
     assert_int_equal(header_len, 5);
-    assert_int_equal(parsed_length, 42);  // payload + auth tag length
+    assert_int_equal(parsed_length, payload_len);  // payload length
     assert_int_equal(parsed_type, 0);     // HTX_FRAME_TYPE_STREAM
     assert_int_equal(parsed_stream_id, 1);
     

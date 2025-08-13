@@ -482,7 +482,7 @@ int htx_construct_stream_frame(uint8_t *frame, size_t *frame_len, uint64_t strea
     }
 
     // write header with correct payload length
-    header_len = htx_serialize_frame_header(frame, *frame_len, (uint32_t)ciphertext_len,
+    header_len = htx_serialize_frame_header(frame, *frame_len, (uint32_t)payload_len,
                                             HTX_FRAME_TYPE_STREAM, stream_id);
     if (header_len < 0) {
         return -1;

@@ -41,6 +41,12 @@ typedef enum {
 #define BETANET_DH_PUBKEY_SIZE 32  // x25519
 #define BETANET_DH_PRIVKEY_SIZE 32 // x25519
 #define BETANET_DH_SHARED_SIZE 32  // x25519
+#define BETANET_PEER_ID_SIZE 34    // multihash (2) + sha256 (32)
+
+// PeerID structure (multihash of public key)
+typedef struct {
+    uint8_t data[BETANET_PEER_ID_SIZE];
+} betanet_peer_id_t;
 
 // cryptographic function return codes
 typedef enum {
@@ -156,6 +162,14 @@ int betanet_x25519_keypair(uint8_t *public_key, uint8_t *private_key);
  */
 int betanet_x25519_shared_secret(uint8_t *shared_secret, const uint8_t *private_key,
                                  const uint8_t *public_key);
+
+/**
+ * @brief generate a peer id from a public key
+ * @param peer_id output peer id
+ * @param public_key public key (BETANET_PUBKEY_SIZE bytes)
+ * @return BETANET_CRYPTO_OK on success, error code otherwise
+ */
+int betanet_peer_id_create(betanet_peer_id_t *peer_id, const uint8_t *public_key);
 
 /**
  * @brief initialize the betanet library. must be called once at startup.

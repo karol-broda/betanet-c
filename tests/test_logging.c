@@ -19,8 +19,12 @@ static const uint8_t test_hex_data[] = {
 // helper function to capture stdout/stderr
 static char captured_output[4096];
 static int capture_pipe[2];
+static int saved_stdout;
+static int saved_stderr;
 
 static void setup_capture(void) {
+    saved_stdout = dup(STDOUT_FILENO);
+    saved_stderr = dup(STDERR_FILENO);
     pipe(capture_pipe);
     captured_output[0] = '\0';
 }
@@ -28,19 +32,28 @@ static void setup_capture(void) {
 static void teardown_capture(void) {
     close(capture_pipe[0]);
     close(capture_pipe[1]);
+    dup2(saved_stdout, STDOUT_FILENO);
+    dup2(saved_stderr, STDERR_FILENO);
+    close(saved_stdout);
+    close(saved_stderr);
 }
 
 static void capture_stdout_stderr(void) {
     // redirect stdout and stderr to our pipe
     dup2(capture_pipe[1], STDOUT_FILENO);
     dup2(capture_pipe[1], STDERR_FILENO);
-    close(capture_pipe[1]);
 }
 
 static void read_captured_output(void) {
-    close(capture_pipe[1]);
-    read(capture_pipe[0], captured_output, sizeof(captured_output) - 1);
-    captured_output[sizeof(captured_output) - 1] = '\0';
+    fflush(stdout);
+    fflush(stderr);
+    close(capture_pipe[1]); // Close the write end of the pipe
+    ssize_t len = read(capture_pipe[0], captured_output, sizeof(captured_output) - 1);
+    if (len > 0) {
+        captured_output[len] = '\0';
+    } else {
+        captured_output[0] = '\0';
+    }
 }
 
 // test that debug logs are compiled out in release builds

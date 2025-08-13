@@ -133,6 +133,12 @@ if(CMOCKA_FOUND)
     target_compile_options(test_logging PRIVATE ${CMOCKA_CFLAGS_OTHER})
     add_test(NAME test_logging COMMAND test_logging)
 
+    add_executable(test_naming tests/test_naming.c)
+    target_link_libraries(test_naming PRIVATE betanet cmocka)
+    add_test(NAME test_naming COMMAND test_naming)
+    set_property(TARGET test_naming PROPERTY C_STANDARD 11)
+    set_property(TARGET test_naming PROPERTY C_STANDARD_REQUIRED ON)
+
     # ensure test files are included in the compilation database
     # for vscode linter support
     set_property(TARGET test_core PROPERTY C_STANDARD 11)

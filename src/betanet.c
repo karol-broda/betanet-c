@@ -85,6 +85,8 @@ extern int htx_parse_stream_frame(const uint8_t *frame, size_t frame_len, uint64
 extern int htx_deserialize_frame_header(const uint8_t *buf, size_t buf_len, uint32_t *length,
                                         uint8_t *type, uint64_t *stream_id);
 
+static int betanet_discover_peers(betanet_addr_t **peer_list, int *peer_count);
+
 /**
  * @brief perform htx access ticket bootstrap
  * @param tcp_fd connected tcp socket
@@ -473,12 +475,23 @@ void betanet_free_addr(betanet_addr_t addr) {
 }
 
 int betanet_connect(betanet_socket_t sock, betanet_addr_t addr) {
-    if (sock == NULL || addr == NULL) {
+    if (sock == NULL) {
         return -1;
     }
 
+    betanet_addr_t addr_to_connect = addr;
+    betanet_addr_t *peer_list = NULL;
+    int peer_count = 0;
+
+    if (addr_to_connect == NULL) {
+        if (betanet_discover_peers(&peer_list, &peer_count) != 0 || peer_count == 0) {
+            return -1; // discovery failed
+        }
+        addr_to_connect = peer_list[0];
+    }
+
     betanet_socket_struct_t *s = (betanet_socket_struct_t *)sock;
-    betanet_addr_struct_t *a = (betanet_addr_struct_t *)addr;
+    betanet_addr_struct_t *a = (betanet_addr_struct_t *)addr_to_connect;
 
     if (s->connected) {
         return -1; // already connected
@@ -559,6 +572,14 @@ int betanet_connect(betanet_socket_t sock, betanet_addr_t addr) {
     }
 
     s->connected = 1;
+
+    if (peer_list != NULL) {
+        for (int i = 0; i < peer_count; i++) {
+            betanet_free_addr(peer_list[i]);
+        }
+        free(peer_list);
+    }
+
     return 0;
 }
 
@@ -1025,4 +1046,32 @@ betanet_socket_t betanet_accept(betanet_socket_t sock, betanet_addr_t *client_ad
     }
 
     return new_sock;
+}
+
+static int betanet_discover_peers(betanet_addr_t **peer_list, int *peer_count) {
+    if (peer_list == NULL || peer_count == NULL) {
+        return -1;
+    }
+
+    // for now, use a hardcoded list of bootstrap peers
+    const char *bootstrap_peers[] = {
+        "bootstrap.betanet.io:443"
+    };
+    int num_peers = sizeof(bootstrap_peers) / sizeof(bootstrap_peers[0]);
+
+    *peer_list = malloc(num_peers * sizeof(betanet_addr_t));
+    if (*peer_list == NULL) {
+        return -1;
+    }
+
+    int found_peers = 0;
+    for (int i = 0; i < num_peers; i++) {
+        betanet_addr_t addr = betanet_resolve(bootstrap_peers[i]);
+        if (addr != NULL) {
+            (*peer_list)[found_peers++] = addr;
+        }
+    }
+
+    *peer_count = found_peers;
+    return 0;
 }

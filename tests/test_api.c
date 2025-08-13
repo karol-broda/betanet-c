@@ -131,18 +131,24 @@ static void test_betanet_resolve_invalid(void **state) {
 static void test_betanet_connect_invalid_params(void **state) {
     (void)state;
 
-    betanet_socket_t sock = betanet_socket();
     betanet_addr_t addr = betanet_resolve("127.0.0.1:8080");
 
     // test null socket
     int result = betanet_connect(NULL, addr);
     assert_int_equal(result, -1);
 
-    // test null address
-    result = betanet_connect(sock, NULL);
+    betanet_free_addr(addr);
+}
+
+static void test_betanet_connect_discovery(void **state) {
+    (void)state;
+
+    betanet_socket_t sock = betanet_socket();
+
+    // test discovery (will fail because it can't connect)
+    int result = betanet_connect(sock, NULL);
     assert_int_equal(result, -1);
 
-    betanet_free_addr(addr);
     betanet_close(sock);
 }
 
@@ -231,6 +237,7 @@ int main(void) {
         cmocka_unit_test(test_betanet_resolve_success),
         cmocka_unit_test(test_betanet_resolve_invalid),
         cmocka_unit_test(test_betanet_connect_invalid_params),
+        cmocka_unit_test(test_betanet_connect_discovery),
         cmocka_unit_test(test_betanet_send_recv_invalid_params),
         cmocka_unit_test(test_betanet_close_invalid),
         cmocka_unit_test(test_betanet_api_workflow),
