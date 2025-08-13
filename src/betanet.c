@@ -1,4 +1,5 @@
 #include "betanet.h"
+#include "betanet_log.h"
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -10,9 +11,6 @@
 #include <netinet/in.h>
 #include <sodium.h>
 #include <sys/socket.h>
-
-// forward declaration for debug function
-extern void dump_hex(const void* data, size_t size);
 
 typedef struct noise_handshake_state_struct {
     // symmetric state
@@ -129,7 +127,7 @@ static int perform_htx_bootstrap(int tcp_fd, const char *host,
     // send http request
     ssize_t sent = send(tcp_fd, http_request, request_len, 0);
     if (sent < 0 || (size_t)sent != request_len) {
-        printf("[DEBUG] HTX: Failed to send HTTP request\n");
+        BETANET_LOG_ERROR("HTX: Failed to send HTTP request");
         return -1;
     }
 
@@ -137,19 +135,19 @@ static int perform_htx_bootstrap(int tcp_fd, const char *host,
     char response[1024];
     ssize_t received = recv(tcp_fd, response, sizeof(response) - 1, 0);
     if (received <= 0) {
-        printf("[DEBUG] HTX: Failed to receive HTTP response\n");
+        BETANET_LOG_ERROR("HTX: Failed to receive HTTP response");
         return -1;
     }
 
     response[received] = '\0';
-    printf("[DEBUG] HTX: Received response: %.100s...\n", response);
+    BETANET_LOG_DEBUG("HTX: Received response: %.100s...", response);
 
     // check for successful response (simplified - look for 200 OK)
     if (strstr(response, "200 OK") == NULL) {
-        printf("[DEBUG] HTX: HTTP response not 200 OK\n");
+        BETANET_LOG_ERROR("HTX: HTTP response not 200 OK");
         return -1;
     }
-    printf("[DEBUG] HTX: Bootstrap completed successfully\n");
+    BETANET_LOG_DEBUG("HTX: Bootstrap completed successfully");
 
     return 0;
 }
@@ -197,49 +195,49 @@ static int perform_noise_handshake(int tcp_fd, const uint8_t *server_static_key,
     }
 
     // send message 1
-    printf("[DEBUG] NOISE CLIENT: Sending message 1 (%zu bytes)\n", msg1_len);
+    BETANET_LOG_DEBUG("NOISE CLIENT: Sending message 1 (%zu bytes)", msg1_len);
     if (send(tcp_fd, msg1, msg1_len, 0) != (ssize_t)msg1_len) {
-        printf("[DEBUG] NOISE CLIENT: Failed to send message 1\n");
+        BETANET_LOG_ERROR("NOISE CLIENT: Failed to send message 1");
         free(handshake);
         return -1;
     }
 
     // receive message 2: <- e, ee, s, es
     uint8_t msg2[256];
-    printf("[DEBUG] NOISE CLIENT: Waiting for message 2...\n");
+    BETANET_LOG_DEBUG("NOISE CLIENT: Waiting for message 2...");
     ssize_t msg2_received = recv(tcp_fd, msg2, sizeof(msg2), 0);
     if (msg2_received <= 0) {
-        printf("[DEBUG] NOISE CLIENT: Failed to receive message 2\n");
+        BETANET_LOG_ERROR("NOISE CLIENT: Failed to receive message 2");
         free(handshake);
         return -1;
     }
-    printf("[DEBUG] NOISE CLIENT: Received message 2 (%zd bytes)\n", msg2_received);
+    BETANET_LOG_DEBUG("NOISE CLIENT: Received message 2 (%zd bytes)", msg2_received);
 
     if (noise_read_message(handshake, msg2, msg2_received, NULL, NULL) != 0) {
-        printf("[DEBUG] NOISE CLIENT: Failed to process message 2\n");
+        BETANET_LOG_ERROR("NOISE CLIENT: Failed to process message 2");
         free(handshake);
         return -1;
     }
-    printf("[DEBUG] NOISE CLIENT: Processed message 2 successfully\n");
+    BETANET_LOG_DEBUG("NOISE CLIENT: Processed message 2 successfully");
 
     // message 3: -> s, se (with empty payload for now)
     uint8_t msg3[128];
     size_t msg3_len = sizeof(msg3);
 
     if (noise_write_message(handshake, msg3, &msg3_len, NULL, 0) != 0) {
-        printf("[DEBUG] NOISE CLIENT: Failed to generate message 3\n");
+        BETANET_LOG_ERROR("NOISE CLIENT: Failed to generate message 3");
         free(handshake);
         return -1;
     }
 
     // send message 3
-    printf("[DEBUG] NOISE CLIENT: Sending message 3 (%zu bytes)\n", msg3_len);
+    BETANET_LOG_DEBUG("NOISE CLIENT: Sending message 3 (%zu bytes)", msg3_len);
     if (send(tcp_fd, msg3, msg3_len, 0) != (ssize_t)msg3_len) {
-        printf("[DEBUG] NOISE CLIENT: Failed to send message 3\n");
+        BETANET_LOG_ERROR("NOISE CLIENT: Failed to send message 3");
         free(handshake);
         return -1;
     }
-    printf("[DEBUG] NOISE CLIENT: Sent message 3 successfully\n");
+    BETANET_LOG_DEBUG("NOISE CLIENT: Sent message 3 successfully");
 
     // finalize handshake and derive transport keys
     if (noise_handshake_finalize(handshake, transport_state) != 0) {
@@ -579,29 +577,28 @@ ssize_t betanet_send(betanet_socket_t sock, const void *buffer, size_t length) {
     uint8_t frame_buffer[length + 256]; // extra space for frame header + auth tag
     size_t frame_len = sizeof(frame_buffer);
 
-    printf("[DEBUG] BETANET_SEND: Constructing frame for %zu bytes, stream_id=%llu\n", 
+    BETANET_LOG_DEBUG("BETANET_SEND: Constructing frame for %zu bytes, stream_id=%llu", 
            length, (unsigned long long)s->next_stream_id);
 
     if (htx_construct_stream_frame(frame_buffer, &frame_len, s->next_stream_id,
                                    (const uint8_t *)buffer, length, s->transport_state) != 0) {
-        printf("[DEBUG] BETANET_SEND: Failed to construct HTX frame\n");
+        BETANET_LOG_ERROR("BETANET_SEND: Failed to construct HTX frame");
         return -1;
     }
 
-    printf("[DEBUG] BETANET_SEND: Frame constructed successfully, frame_len=%zu\n", frame_len);
-    printf("[DEBUG] BETANET_SEND: Complete frame hex dump:\n");
-    dump_hex(frame_buffer, frame_len);
+    BETANET_LOG_DEBUG("BETANET_SEND: Frame constructed successfully, frame_len=%zu", frame_len);
+    BETANET_LOG_HEX("BETANET_SEND: Complete frame", frame_buffer, frame_len);
 
     // send the complete frame over tcp
-    printf("[DEBUG] BETANET_SEND: Sending %zu bytes to socket fd=%d\n", frame_len, s->tcp_fd);
+    BETANET_LOG_DEBUG("BETANET_SEND: Sending %zu bytes to socket fd=%d", frame_len, s->tcp_fd);
     ssize_t sent = send(s->tcp_fd, frame_buffer, frame_len, 0);
-    printf("[DEBUG] BETANET_SEND: send() returned %zd\n", sent);
+    BETANET_LOG_DEBUG("BETANET_SEND: send() returned %zd", sent);
     if (sent < 0) {
-        printf("[DEBUG] BETANET_SEND: send() failed with errno=%d (%s)\n", errno, strerror(errno));
+        BETANET_LOG_ERROR("BETANET_SEND: send() failed with errno=%d (%s)", errno, strerror(errno));
         return -1;
     }
     if (sent != (ssize_t)frame_len) {
-        printf("[DEBUG] BETANET_SEND: Warning: partial send - wanted %zu, sent %zd\n", frame_len, sent);
+        BETANET_LOG_WARN("BETANET_SEND: Warning: partial send - wanted %zu, sent %zd", frame_len, sent);
     }
 
     // keep same stream_id for request-response cycle
@@ -620,40 +617,39 @@ ssize_t betanet_recv(betanet_socket_t sock, void *buffer, size_t length, uint64_
     betanet_socket_struct_t *s = (betanet_socket_struct_t *)sock;
 
     if (!s->connected || s->tcp_fd < 0) {
-        printf("[DEBUG] BETANET_RECV: Socket not connected (connected=%d, fd=%d)\n", s->connected, s->tcp_fd);
+        BETANET_LOG_DEBUG("BETANET_RECV: Socket not connected (connected=%d, fd=%d)", s->connected, s->tcp_fd);
         return -1; // not connected
     }
     
-    printf("[DEBUG] BETANET_RECV: Socket state - connected=%d, fd=%d\n", s->connected, s->tcp_fd);
+    BETANET_LOG_DEBUG("BETANET_RECV: Socket state - connected=%d, fd=%d", s->connected, s->tcp_fd);
 
     // receive htx frame header first (read 5 bytes to handle stream frames)
     uint8_t header_buf[16];                                      // max header size
-    printf("[DEBUG] BETANET_RECV: About to call recv() for header...\n");
+    BETANET_LOG_DEBUG("BETANET_RECV: About to call recv() for header...");
     ssize_t header_received = recv(s->tcp_fd, header_buf, 5, 0); // read 5 bytes for stream frames
-    printf("[DEBUG] BETANET_RECV: recv() returned %zd for header\n", header_received);
+    BETANET_LOG_DEBUG("BETANET_RECV: recv() returned %zd for header", header_received);
     if (header_received < 4) {
-        printf("[DEBUG] BETANET_RECV: Failed to read frame header (got %zd bytes), errno=%d (%s)\n", 
+        BETANET_LOG_ERROR("BETANET_RECV: Failed to read frame header (got %zd bytes), errno=%d (%s)", 
                header_received, errno, strerror(errno));
         return -1;
     }
-    printf("[DEBUG] BETANET_RECV: Successfully read %zd header bytes\n", header_received);
-    printf("[DEBUG] BETANET_RECV: Header bytes hex dump:\n");
-    dump_hex(header_buf, header_received);
+    BETANET_LOG_DEBUG("BETANET_RECV: Successfully read %zd header bytes", header_received);
+    BETANET_LOG_HEX("BETANET_RECV: Header bytes", header_buf, header_received);
 
     // parse frame header to get payload length and stream id
     uint32_t payload_len;
     uint8_t frame_type;
     uint64_t stream_id;
 
-    printf("[DEBUG] BETANET_RECV: About to parse frame header...\n");
+    BETANET_LOG_DEBUG("BETANET_RECV: About to parse frame header...");
     int header_len = htx_deserialize_frame_header(header_buf, header_received, &payload_len,
                                                   &frame_type, &stream_id);
-    printf("[DEBUG] BETANET_RECV: htx_deserialize_frame_header returned %d\n", header_len);
+    BETANET_LOG_DEBUG("BETANET_RECV: htx_deserialize_frame_header returned %d", header_len);
     if (header_len < 0) {
-        printf("[DEBUG] BETANET_RECV: Frame header parsing failed\n");
+        BETANET_LOG_ERROR("BETANET_RECV: Frame header parsing failed");
         return -1;
     }
-    printf("[DEBUG] BETANET_RECV: Parsed frame - payload_len=%u, frame_type=%u, stream_id=%llu, header_len=%d\n", 
+    BETANET_LOG_DEBUG("BETANET_RECV: Parsed frame - payload_len=%u, frame_type=%u, stream_id=%llu, header_len=%d", 
            payload_len, frame_type, (unsigned long long)stream_id, header_len);
 
     // read additional header bytes if needed
@@ -687,17 +683,17 @@ ssize_t betanet_recv(betanet_socket_t sock, void *buffer, size_t length, uint64_
     uint64_t frame_stream_id;
     size_t decrypted_len = length;
 
-    printf("[DEBUG] BETANET_RECV: Parsing frame, total_len=%zu, payload_len=%u\n", 
+    BETANET_LOG_DEBUG("BETANET_RECV: Parsing frame, total_len=%zu, payload_len=%u", 
            (size_t)(header_len + payload_len), payload_len);
 
     if (htx_parse_stream_frame(frame_buffer, header_len + payload_len, &frame_stream_id,
                                (uint8_t *)buffer, &decrypted_len, s->transport_state) != 0) {
-        printf("[DEBUG] BETANET_RECV: Failed to parse/decrypt HTX frame\n");
+        BETANET_LOG_ERROR("BETANET_RECV: Failed to parse/decrypt HTX frame");
         free(frame_buffer);
         return -1;
     }
 
-    printf("[DEBUG] BETANET_RECV: Frame parsed successfully, decrypted_len=%zu, stream_id=%llu\n",
+    BETANET_LOG_DEBUG("BETANET_RECV: Frame parsed successfully, decrypted_len=%zu, stream_id=%llu",
            decrypted_len, (unsigned long long)frame_stream_id);
 
     // return stream_id if caller wants it
@@ -724,25 +720,25 @@ ssize_t betanet_send_response(betanet_socket_t sock, const void *buffer, size_t 
     uint8_t frame_buffer[length + 256]; // extra space for frame header + auth tag
     size_t frame_len = sizeof(frame_buffer);
 
-    printf("[DEBUG] BETANET_SEND_RESPONSE: Constructing frame for %zu bytes, response_stream_id=%llu\n", 
+    BETANET_LOG_DEBUG("BETANET_SEND_RESPONSE: Constructing frame for %zu bytes, response_stream_id=%llu", 
            length, (unsigned long long)response_stream_id);
 
     if (htx_construct_stream_frame(frame_buffer, &frame_len, response_stream_id,
                                    (const uint8_t *)buffer, length, s->transport_state) != 0) {
-        printf("[DEBUG] BETANET_SEND_RESPONSE: Failed to construct HTX frame\n");
+        BETANET_LOG_ERROR("BETANET_SEND_RESPONSE: Failed to construct HTX frame");
         return -1;
     }
 
-    printf("[DEBUG] BETANET_SEND_RESPONSE: Frame constructed, total_len=%zu\n", frame_len);
+    BETANET_LOG_DEBUG("BETANET_SEND_RESPONSE: Frame constructed, total_len=%zu", frame_len);
 
     // send the frame over tcp
     ssize_t sent = send(s->tcp_fd, frame_buffer, frame_len, 0);
     if (sent < 0) {
-        printf("[DEBUG] BETANET_SEND_RESPONSE: send() failed with errno=%d (%s)\n", errno, strerror(errno));
+        BETANET_LOG_ERROR("BETANET_SEND_RESPONSE: send() failed with errno=%d (%s)", errno, strerror(errno));
         return -1;
     }
     if (sent != (ssize_t)frame_len) {
-        printf("[DEBUG] BETANET_SEND_RESPONSE: Warning: partial send - wanted %zu, sent %zd\n", frame_len, sent);
+        BETANET_LOG_WARN("BETANET_SEND_RESPONSE: Warning: partial send - wanted %zu, sent %zd", frame_len, sent);
     }
 
     // return original payload length on success
@@ -882,36 +878,32 @@ static int perform_noise_handshake_responder(int tcp_fd, const uint8_t *server_s
     // The server needs to derive its own public key to mix into the handshake hash
     uint8_t server_static_pub[BETANET_DH_PUBKEY_SIZE];
     if (crypto_scalarmult_base(server_static_pub, server_static_priv) != 0) {
-        printf("[DEBUG] NOISE SERVER: Failed to derive static public key\n");
+        BETANET_LOG_ERROR("NOISE SERVER: Failed to derive static public key");
         free(handshake);
         return -1;
     }
 
     if (noise_handshake_init(handshake, 0, server_static_priv, server_static_pub) != 0) {
-        printf("[DEBUG] NOISE SERVER: Failed to initialize handshake\n");
+        BETANET_LOG_ERROR("NOISE SERVER: Failed to initialize handshake");
         free(handshake);
         return -1;
     }
-    printf("[DEBUG] NOISE SERVER: Handshake initialized successfully\n");
+    BETANET_LOG_DEBUG("NOISE SERVER: Handshake initialized successfully");
 
     // receive message 1: -> e
     uint8_t msg1[128];
-    printf("[DEBUG] NOISE SERVER: Waiting for message 1...\n");
+    BETANET_LOG_DEBUG("NOISE SERVER: Waiting for message 1...");
     ssize_t msg1_received = recv(tcp_fd, msg1, sizeof(msg1), 0);
     if (msg1_received <= 0) {
-        printf("[DEBUG] NOISE SERVER: Failed to receive message 1\n");
+        BETANET_LOG_ERROR("NOISE SERVER: Failed to receive message 1");
         free(handshake);
         return -1;
     }
-    printf("[DEBUG] NOISE SERVER: Received message 1 (%zd bytes)\n", msg1_received);
-    printf("[DEBUG] NOISE SERVER: First 16 bytes: ");
-    for (int i = 0; i < 16 && i < msg1_received; i++) {
-        printf("%02x ", msg1[i]);
-    }
-    printf("\n");
+    BETANET_LOG_DEBUG("NOISE SERVER: Received message 1 (%zd bytes)", msg1_received);
+    BETANET_LOG_HEX("NOISE SERVER: Message 1 first 16 bytes", msg1, msg1_received < 16 ? msg1_received : 16);
 
     if (noise_read_message(handshake, msg1, msg1_received, NULL, NULL) != 0) {
-        printf("[DEBUG] NOISE SERVER: Failed to process message 1\n");
+        BETANET_LOG_ERROR("NOISE SERVER: Failed to process message 1");
         free(handshake);
         return -1;
     }
@@ -921,14 +913,14 @@ static int perform_noise_handshake_responder(int tcp_fd, const uint8_t *server_s
     size_t msg2_len = sizeof(msg2);
 
     if (noise_write_message(handshake, msg2, &msg2_len, NULL, 0) != 0) {
-        printf("[DEBUG] NOISE SERVER: Failed to generate message 2\n");
+        BETANET_LOG_ERROR("NOISE SERVER: Failed to generate message 2");
         free(handshake);
         return -1;
     }
 
-    printf("[DEBUG] NOISE SERVER: Sending message 2 (%zu bytes)\n", msg2_len);
+    BETANET_LOG_DEBUG("NOISE SERVER: Sending message 2 (%zu bytes)", msg2_len);
     if (send(tcp_fd, msg2, msg2_len, 0) != (ssize_t)msg2_len) {
-        printf("[DEBUG] NOISE SERVER: Failed to send message 2\n");
+        BETANET_LOG_ERROR("NOISE SERVER: Failed to send message 2");
         free(handshake);
         return -1;
     }
@@ -983,7 +975,7 @@ betanet_socket_t betanet_accept(betanet_socket_t sock, betanet_addr_t *client_ad
         close(new_tcp_fd);
         return NULL;
     }
-    printf("[DEBUG] SERVER: Received HTTP request (%zd bytes)\n", http_received);
+    BETANET_LOG_DEBUG("SERVER: Received HTTP request (%zd bytes)", http_received);
     
     // send http response to let the client proceed
     const char *http_response = "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n";

@@ -15,6 +15,30 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
+# set default build type to Debug if not specified
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Debug)
+endif()
+
+# logging level configuration based on build type
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    # debug builds: enable all logging (level 3)
+    add_compile_definitions(BETANET_LOG_LEVEL=3)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -O0 -Wall -Wextra")
+elseif(CMAKE_BUILD_TYPE STREQUAL "Release")
+    # release builds: only errors (level 0)
+    add_compile_definitions(BETANET_LOG_LEVEL=0 NDEBUG)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -DNDEBUG")
+elseif(CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
+    # release with debug info: errors and warnings (level 1)
+    add_compile_definitions(BETANET_LOG_LEVEL=1)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -O2")
+elseif(CMAKE_BUILD_TYPE STREQUAL "MinSizeRel")
+    # minimal size release: no logging at all (level -1)
+    add_compile_definitions(BETANET_LOG_LEVEL=-1 NDEBUG)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Os -DNDEBUG")
+endif()
+
 find_package(OpenSSL REQUIRED)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(SODIUM REQUIRED libsodium)
@@ -102,6 +126,13 @@ if(CMOCKA_FOUND)
     target_link_libraries(test_smoke_client_server PRIVATE betanet cmocka)
     add_test(NAME test_smoke_client_server COMMAND test_smoke_client_server)
 
+    # logging system tests
+    add_executable(test_logging tests/test_logging.c)
+    target_link_libraries(test_logging PRIVATE betanet cmocka)
+    target_include_directories(test_logging PRIVATE ${CMOCKA_INCLUDE_DIRS})
+    target_compile_options(test_logging PRIVATE ${CMOCKA_CFLAGS_OTHER})
+    add_test(NAME test_logging COMMAND test_logging)
+
     # ensure test files are included in the compilation database
     # for vscode linter support
     set_property(TARGET test_core PROPERTY C_STANDARD 11)
@@ -118,6 +149,8 @@ if(CMOCKA_FOUND)
     set_property(TARGET test_api PROPERTY C_STANDARD_REQUIRED ON)
     set_property(TARGET test_l2_secure_channel PROPERTY C_STANDARD 11)
     set_property(TARGET test_l2_secure_channel PROPERTY C_STANDARD_REQUIRED ON)
+    set_property(TARGET test_logging PROPERTY C_STANDARD 11)
+    set_property(TARGET test_logging PROPERTY C_STANDARD_REQUIRED ON)
 endif()
 
 add_executable(example_client examples/example_client.c)

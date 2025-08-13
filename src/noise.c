@@ -1,4 +1,5 @@
 #include "betanet.h"
+#include "betanet_log.h"
 #include <sodium.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -67,8 +68,8 @@ int noise_handshake_init(noise_handshake_state_t *state, int initiator,
         return -1;
     }
 
-    printf("[DEBUG] NOISE XK INIT: Starting handshake initialization\n");
-    printf("[DEBUG] NOISE XK INIT: Role: %s\n", initiator ? "INITIATOR" : "RESPONDER");
+    BETANET_LOG_DEBUG("NOISE XK INIT: Starting handshake initialization");
+    BETANET_LOG_DEBUG("NOISE XK INIT: Role: %s", initiator ? "INITIATOR" : "RESPONDER");
 
     memset(state, 0, sizeof(*state));
     state->initiator = initiator;
@@ -78,28 +79,24 @@ int noise_handshake_init(noise_handshake_state_t *state, int initiator,
 
     // Step 1: initialize h = hash(protocol_name)
     const char *protocol_name = NOISE_PROTOCOL_NAME;
-    printf("[DEBUG] NOISE XK INIT: Step 1 - Hashing protocol name: %s\n", protocol_name);
+    BETANET_LOG_DEBUG("NOISE XK INIT: Step 1 - Hashing protocol name: %s", protocol_name);
     if (betanet_hash_sha256(state->h, (const uint8_t *)protocol_name, strlen(protocol_name)) !=
         BETANET_CRYPTO_OK) {
         return -1;
     }
 
-    printf("[DEBUG] NOISE XK INIT: h = hash('%s') = ", protocol_name);
-    for(int i = 0; i < 32; i++) printf("%02x", state->h[i]);
-    printf("\n");
+    BETANET_LOG_HEX("NOISE XK INIT: h = hash(protocol_name)", state->h, 32);
 
     // Step 2: initialize ck = h  
     memcpy(state->ck, state->h, NOISE_MAX_HASHLEN);
-    printf("[DEBUG] NOISE XK INIT: Step 2 - ck = h\n");
+    BETANET_LOG_DEBUG("NOISE XK INIT: Step 2 - ck = h");
 
     // Step 3: In XK pattern, both parties mix responder's static key
     if (remote_static_key != NULL) {
-        printf("[DEBUG] NOISE XK INIT: Step 3 - Mixing responder's static key (XK pattern)\n");
+        BETANET_LOG_DEBUG("NOISE XK INIT: Step 3 - Mixing responder's static key (XK pattern)");
         memcpy(state->rs, remote_static_key, BETANET_DH_PUBKEY_SIZE);
 
-        printf("[DEBUG] NOISE XK INIT: rs = ");
-        for(int i = 0; i < 32; i++) printf("%02x", state->rs[i]);
-        printf("\n");
+        BETANET_LOG_HEX("NOISE XK INIT: rs", state->rs, 32);
 
         // h = hash(h || rs)
         uint8_t temp_h[NOISE_MAX_HASHLEN + BETANET_DH_PUBKEY_SIZE];
@@ -109,27 +106,23 @@ int noise_handshake_init(noise_handshake_state_t *state, int initiator,
             return -1;
         }
 
-        printf("[DEBUG] NOISE XK INIT: h = hash(h || rs) = ");
-        for(int i = 0; i < 32; i++) printf("%02x", state->h[i]);
-        printf("\n");
+        BETANET_LOG_HEX("NOISE XK INIT: h = hash(h || rs)", state->h, 32);
     } else {
-        printf("[DEBUG] NOISE XK INIT: Step 3 - No remote static key provided\n");
+        BETANET_LOG_DEBUG("NOISE XK INIT: Step 3 - No remote static key provided");
     }
 
     // Step 4: Set local static key
     if (local_static_key != NULL) {
-        printf("[DEBUG] NOISE XK INIT: Step 4 - Setting local static key\n");
+        BETANET_LOG_DEBUG("NOISE XK INIT: Step 4 - Setting local static key");
         memcpy(state->s, local_static_key, BETANET_DH_PRIVKEY_SIZE);
         // derive public key
         if (crypto_scalarmult_base(state->s_pub, state->s) != 0) {
             return -1;
         }
-        printf("[DEBUG] NOISE XK INIT: Local static public key: ");
-        for(int i = 0; i < 32; i++) printf("%02x", state->s_pub[i]);
-        printf("\n");
+        BETANET_LOG_HEX("NOISE XK INIT: Local static public key", state->s_pub, 32);
     }
 
-    printf("[DEBUG] NOISE XK INIT: Initialization complete - Ready for message patterns\n");
+    BETANET_LOG_DEBUG("NOISE XK INIT: Initialization complete - Ready for message patterns");
     return 0;
 }
 
@@ -174,10 +167,8 @@ static int noise_mix_hash(noise_handshake_state_t *state, const uint8_t *data, s
         return -1;
     }
 
-    printf("[DEBUG] NOISE MIX_HASH: mixing %zu bytes, initiator=%d\n", data_len, state->initiator);
-    printf("[DEBUG] NOISE MIX_HASH: old_h=");
-    for(int i = 0; i < 16; i++) printf("%02x", state->h[i]);
-    printf("...\n");
+    BETANET_LOG_DEBUG("NOISE MIX_HASH: mixing %zu bytes, initiator=%d", data_len, state->initiator);
+    BETANET_LOG_HEX("NOISE MIX_HASH: old_h (first 16 bytes)", state->h, 16);
 
     uint8_t temp_h[NOISE_MAX_HASHLEN + data_len];
     memcpy(temp_h, state->h, NOISE_MAX_HASHLEN);
@@ -185,9 +176,7 @@ static int noise_mix_hash(noise_handshake_state_t *state, const uint8_t *data, s
 
     int result = betanet_hash_sha256(state->h, temp_h, sizeof(temp_h));
     
-    printf("[DEBUG] NOISE MIX_HASH: new_h=");
-    for(int i = 0; i < 16; i++) printf("%02x", state->h[i]);
-    printf("...\n");
+    BETANET_LOG_HEX("NOISE MIX_HASH: new_h (first 16 bytes)", state->h, 16);
 
     return result;
 }
@@ -224,10 +213,8 @@ static int noise_encrypt_with_ad(noise_handshake_state_t *state, uint8_t *cipher
         nonce[i] = (state->n >> (i * 8)) & 0xff;
     }
 
-    printf("[DEBUG] NOISE ENCRYPT: nonce=%llu, has_key=%d\n", (unsigned long long)state->n, state->has_key);
-    printf("[DEBUG] NOISE ENCRYPT: hash=");
-    for(int i = 0; i < 16; i++) printf("%02x", state->h[i]);
-    printf("...\n");
+    BETANET_LOG_DEBUG("NOISE ENCRYPT: nonce=%llu, has_key=%d", (unsigned long long)state->n, state->has_key);
+    BETANET_LOG_HEX("NOISE ENCRYPT: hash (first 16 bytes)", state->h, 16);
 
     int result = betanet_aead_encrypt(ciphertext, ciphertext_len, plaintext, plaintext_len, nonce,
                                       state->k, state->h, NOISE_MAX_HASHLEN);
@@ -271,10 +258,8 @@ static int noise_decrypt_with_ad(noise_handshake_state_t *state, uint8_t *plaint
         nonce[i] = (state->n >> (i * 8)) & 0xff;
     }
 
-    printf("[DEBUG] NOISE DECRYPT: nonce=%llu, has_key=%d\n", (unsigned long long)state->n, state->has_key);
-    printf("[DEBUG] NOISE DECRYPT: hash=");
-    for(int i = 0; i < 16; i++) printf("%02x", state->h[i]);
-    printf("...\n");
+    BETANET_LOG_DEBUG("NOISE DECRYPT: nonce=%llu, has_key=%d", (unsigned long long)state->n, state->has_key);
+    BETANET_LOG_HEX("NOISE DECRYPT: hash (first 16 bytes)", state->h, 16);
 
     int result = betanet_aead_decrypt(plaintext, plaintext_len, ciphertext, ciphertext_len, nonce,
                                       state->k, state->h, NOISE_MAX_HASHLEN);
@@ -301,7 +286,7 @@ int noise_write_message(noise_handshake_state_t *state, uint8_t *message, size_t
         return -1;
     }
 
-    printf("[DEBUG] NOISE XK WRITE: %s writing message %d\n", 
+    BETANET_LOG_DEBUG("NOISE XK WRITE: %s writing message %d", 
            state->initiator ? "INITIATOR" : "RESPONDER", 
            state->message_patterns_complete + 1);
     
@@ -318,38 +303,32 @@ int noise_write_message(noise_handshake_state_t *state, uint8_t *message, size_t
         switch (state->message_patterns_complete) {
         case 0: {
             // XK Message 1: -> e
-            printf("[DEBUG] NOISE XK MSG1: Initiator generating ephemeral keypair\n");
+            BETANET_LOG_DEBUG("NOISE XK MSG1: Initiator generating ephemeral keypair");
             if (betanet_x25519_keypair(state->e_pub, state->e) != BETANET_CRYPTO_OK) {
-                printf("[DEBUG] NOISE XK MSG1: Failed to generate ephemeral keypair\n");
+                BETANET_LOG_DEBUG("NOISE XK MSG1: Failed to generate ephemeral keypair");
                 return -1;
             }
 
-            printf("[DEBUG] NOISE XK MSG1: Generated e_pub = ");
-            for(int i = 0; i < 32; i++) printf("%02x", state->e_pub[i]);
-            printf("\n");
+            BETANET_LOG_HEX("NOISE XK MSG1: Generated e_pub", state->e_pub, 32);
 
             // write e
             if (remaining < BETANET_DH_PUBKEY_SIZE) {
-                printf("[DEBUG] NOISE XK MSG1: Insufficient buffer space\n");
+                BETANET_LOG_DEBUG("NOISE XK MSG1: Insufficient buffer space");
                 return -1;
             }
             memcpy(message + offset, state->e_pub, BETANET_DH_PUBKEY_SIZE);
             offset += BETANET_DH_PUBKEY_SIZE;
             remaining -= BETANET_DH_PUBKEY_SIZE;
 
-            printf("[DEBUG] NOISE XK MSG1: Current h before mixing e = ");
-            for(int i = 0; i < 32; i++) printf("%02x", state->h[i]);
-            printf("\n");
+            BETANET_LOG_HEX("NOISE XK MSG1: Current h before mixing e", state->h, 32);
 
             // mix hash with e: h = hash(h || e)
             if (noise_mix_hash(state, state->e_pub, BETANET_DH_PUBKEY_SIZE) != 0) {
-                printf("[DEBUG] NOISE XK MSG1: Failed to mix hash with e\n");
+                BETANET_LOG_DEBUG("NOISE XK MSG1: Failed to mix hash with e");
                 return -1;
             }
 
-            printf("[DEBUG] NOISE XK MSG1: h after mixing e = ");
-            for(int i = 0; i < 32; i++) printf("%02x", state->h[i]);
-            printf("\n");
+            BETANET_LOG_HEX("NOISE XK MSG1: h after mixing e", state->h, 32);
 
             break;
         }
@@ -395,25 +374,21 @@ int noise_write_message(noise_handshake_state_t *state, uint8_t *message, size_t
         switch (state->message_patterns_complete) {
         case 1: {
             // XK Message 2: <- e, ee, s, es
-            printf("[DEBUG] NOISE XK MSG2: Responder generating message 2\n");
-            printf("[DEBUG] NOISE XK MSG2: Current h = ");
-            for(int i = 0; i < 32; i++) printf("%02x", state->h[i]);
-            printf("\n");
+            BETANET_LOG_DEBUG("NOISE XK MSG2: Responder generating message 2");
+            BETANET_LOG_HEX("NOISE XK MSG2: Current h", state->h, 32);
 
             // Step 1: Generate ephemeral keypair and write e
-            printf("[DEBUG] NOISE XK MSG2: Step 1 - Generating ephemeral keypair\n");
+            BETANET_LOG_DEBUG("NOISE XK MSG2: Step 1 - Generating ephemeral keypair");
             if (betanet_x25519_keypair(state->e_pub, state->e) != BETANET_CRYPTO_OK) {
-                printf("[DEBUG] NOISE XK MSG2: Failed to generate ephemeral keypair\n");
+                BETANET_LOG_DEBUG("NOISE XK MSG2: Failed to generate ephemeral keypair");
                 return -1;
             }
 
-            printf("[DEBUG] NOISE XK MSG2: Generated e_pub = ");
-            for(int i = 0; i < 32; i++) printf("%02x", state->e_pub[i]);
-            printf("\n");
+            BETANET_LOG_HEX("NOISE XK MSG2: Generated e_pub", state->e_pub, 32);
 
             // write e
             if (remaining < BETANET_DH_PUBKEY_SIZE) {
-                printf("[DEBUG] NOISE XK MSG2: Insufficient buffer space for e\n");
+                BETANET_LOG_DEBUG("NOISE XK MSG2: Insufficient buffer space for e");
                 return -1;
             }
             memcpy(message + offset, state->e_pub, BETANET_DH_PUBKEY_SIZE);
@@ -421,114 +396,86 @@ int noise_write_message(noise_handshake_state_t *state, uint8_t *message, size_t
             remaining -= BETANET_DH_PUBKEY_SIZE;
 
             // mix hash with e: h = hash(h || e)
-            printf("[DEBUG] NOISE XK MSG2: h before mixing responder e = ");
-            for(int i = 0; i < 32; i++) printf("%02x", state->h[i]);
-            printf("\n");
+            BETANET_LOG_HEX("NOISE XK MSG2: h before mixing responder e", state->h, 32);
 
             if (noise_mix_hash(state, state->e_pub, BETANET_DH_PUBKEY_SIZE) != 0) {
-                printf("[DEBUG] NOISE XK MSG2: Failed to mix hash with e\n");
+                BETANET_LOG_DEBUG("NOISE XK MSG2: Failed to mix hash with e");
                 return -1;
             }
 
-            printf("[DEBUG] NOISE XK MSG2: h after mixing responder e = ");
-            for(int i = 0; i < 32; i++) printf("%02x", state->h[i]);
-            printf("\n");
+            BETANET_LOG_HEX("NOISE XK MSG2: h after mixing responder e", state->h, 32);
 
             // Step 2: Perform ee DH
-            printf("[DEBUG] NOISE XK MSG2: Step 2 - Computing ee DH\n");
-            printf("[DEBUG] NOISE XK MSG2: Responder e_priv with initiator e_pub (re)\n");
-            printf("[DEBUG] NOISE XK MSG2: re = ");
-            for(int i = 0; i < 32; i++) printf("%02x", state->re[i]);
-            printf("\n");
+            BETANET_LOG_DEBUG("NOISE XK MSG2: Step 2 - Computing ee DH");
+            BETANET_LOG_DEBUG("NOISE XK MSG2: Responder e_priv with initiator e_pub (re)");
+            BETANET_LOG_HEX("NOISE XK MSG2: re", state->re, 32);
 
             uint8_t dh_output[BETANET_DH_SHARED_SIZE];
             if (betanet_x25519_shared_secret(dh_output, state->e, state->re) != BETANET_CRYPTO_OK) {
-                printf("[DEBUG] NOISE XK MSG2: Failed to compute ee DH\n");
+                BETANET_LOG_DEBUG("NOISE XK MSG2: Failed to compute ee DH");
                 return -1;
             }
 
-            printf("[DEBUG] NOISE XK MSG2: ee DH result = ");
-            for(int i = 0; i < 32; i++) printf("%02x", dh_output[i]);
-            printf("\n");
+            BETANET_LOG_HEX("NOISE XK MSG2: ee DH result", dh_output, 32);
 
             // mix key with ee: ck, k = HKDF(ck, ee)
-            printf("[DEBUG] NOISE XK MSG2: ck before mix_key = ");
-            for(int i = 0; i < 32; i++) printf("%02x", state->ck[i]);
-            printf("\n");
+            BETANET_LOG_HEX("NOISE XK MSG2: ck before mix_key", state->ck, 32);
 
             if (noise_mix_key(state, dh_output) != 0) {
-                printf("[DEBUG] NOISE XK MSG2: Failed to mix key with ee\n");
+                BETANET_LOG_DEBUG("NOISE XK MSG2: Failed to mix key with ee");
                 sodium_memzero(dh_output, sizeof(dh_output));
                 return -1;
             }
 
-            printf("[DEBUG] NOISE XK MSG2: ck after mix_key = ");
-            for(int i = 0; i < 32; i++) printf("%02x", state->ck[i]);
-            printf("\n");
-            printf("[DEBUG] NOISE XK MSG2: k after mix_key = ");
-            for(int i = 0; i < 32; i++) printf("%02x", state->k[i]);
-            printf("\n");
+            BETANET_LOG_HEX("NOISE XK MSG2: ck after mix_key", state->ck, 32);
+            BETANET_LOG_HEX("NOISE XK MSG2: k after mix_key", state->k, 32);
 
             // Step 3: Encrypt and write s
-            printf("[DEBUG] NOISE XK MSG2: Step 3 - Encrypting static key\n");
-            printf("[DEBUG] NOISE XK MSG2: s_pub to encrypt = ");
-            for(int i = 0; i < 32; i++) printf("%02x", state->s_pub[i]);
-            printf("\n");
+            BETANET_LOG_DEBUG("NOISE XK MSG2: Step 3 - Encrypting static key");
+            BETANET_LOG_HEX("NOISE XK MSG2: s_pub to encrypt", state->s_pub, 32);
 
             size_t s_ciphertext_len = remaining;
             if (noise_encrypt_with_ad(state, message + offset, &s_ciphertext_len, state->s_pub,
                                       BETANET_DH_PUBKEY_SIZE) != 0) {
-                printf("[DEBUG] NOISE XK MSG2: Failed to encrypt static key\n");
+                BETANET_LOG_DEBUG("NOISE XK MSG2: Failed to encrypt static key");
                 sodium_memzero(dh_output, sizeof(dh_output));
                 return -1;
             }
             offset += s_ciphertext_len;
             remaining -= s_ciphertext_len;
-            printf("[DEBUG] NOISE XK MSG2: Encrypted s into %zu bytes\n", s_ciphertext_len);
+            BETANET_LOG_DEBUG("NOISE XK MSG2: Encrypted s into %zu bytes", s_ciphertext_len);
 
             // mix hash with encrypted s: h = hash(h || encrypted_s)
-            printf("[DEBUG] NOISE XK MSG2: h before mixing encrypted s = ");
-            for(int i = 0; i < 32; i++) printf("%02x", state->h[i]);
-            printf("\n");
+            BETANET_LOG_HEX("NOISE XK MSG2: h before mixing encrypted s", state->h, 32);
 
             if (noise_mix_hash(state, message + offset - s_ciphertext_len, s_ciphertext_len) != 0) {
-                printf("[DEBUG] NOISE XK MSG2: Failed to mix hash with encrypted s\n");
+                BETANET_LOG_DEBUG("NOISE XK MSG2: Failed to mix hash with encrypted s");
                 sodium_memzero(dh_output, sizeof(dh_output));
                 return -1;
             }
 
-            printf("[DEBUG] NOISE XK MSG2: h after mixing encrypted s = ");
-            for(int i = 0; i < 32; i++) printf("%02x", state->h[i]);
-            printf("\n");
+            BETANET_LOG_HEX("NOISE XK MSG2: h after mixing encrypted s", state->h, 32);
 
             // Step 4: Perform es DH (initiator ephemeral with responder static)
-            printf("[DEBUG] NOISE XK MSG2: Step 4 - Computing es DH\n");
-            printf("[DEBUG] NOISE XK MSG2: Responder s_priv with initiator e_pub (re)\n");
+            BETANET_LOG_DEBUG("NOISE XK MSG2: Step 4 - Computing es DH");
+            BETANET_LOG_DEBUG("NOISE XK MSG2: Responder s_priv with initiator e_pub (re)");
             if (betanet_x25519_shared_secret(dh_output, state->s, state->re) != BETANET_CRYPTO_OK) {
-                printf("[DEBUG] NOISE XK MSG2: Failed to compute es DH\n");
+                BETANET_LOG_DEBUG("NOISE XK MSG2: Failed to compute es DH");
                 return -1;
             }
 
-            printf("[DEBUG] NOISE XK MSG2: es DH result = ");
-            for(int i = 0; i < 32; i++) printf("%02x", dh_output[i]);
-            printf("\n");
+            BETANET_LOG_HEX("NOISE XK MSG2: es DH result", dh_output, 32);
 
             // mix key with es: ck, k = HKDF(ck, es)
             if (noise_mix_key(state, dh_output) != 0) {
-                printf("[DEBUG] NOISE XK MSG2: Failed to mix key with es\n");
+                BETANET_LOG_DEBUG("NOISE XK MSG2: Failed to mix key with es");
                 sodium_memzero(dh_output, sizeof(dh_output));
                 return -1;
             }
 
-            printf("[DEBUG] NOISE XK MSG2: Final ck = ");
-            for(int i = 0; i < 32; i++) printf("%02x", state->ck[i]);
-            printf("\n");
-            printf("[DEBUG] NOISE XK MSG2: Final k = ");
-            for(int i = 0; i < 32; i++) printf("%02x", state->k[i]);
-            printf("\n");
-            printf("[DEBUG] NOISE XK MSG2: Final h = ");
-            for(int i = 0; i < 32; i++) printf("%02x", state->h[i]);
-            printf("\n");
+            BETANET_LOG_HEX("NOISE XK MSG2: Final ck", state->ck, 32);
+            BETANET_LOG_HEX("NOISE XK MSG2: Final k", state->k, 32);
+            BETANET_LOG_HEX("NOISE XK MSG2: Final h", state->h, 32);
 
             sodium_memzero(dh_output, sizeof(dh_output));
             break;
@@ -575,7 +522,7 @@ int noise_read_message(noise_handshake_state_t *state, const uint8_t *message, s
         return -1;
     }
 
-    printf("[DEBUG] NOISE XK READ: %s reading message %d\n", 
+    BETANET_LOG_DEBUG("NOISE XK READ: %s reading message %d", 
            state->initiator ? "INITIATOR" : "RESPONDER", 
            state->message_patterns_complete + 1);
 
@@ -587,100 +534,81 @@ int noise_read_message(noise_handshake_state_t *state, const uint8_t *message, s
         switch (state->message_patterns_complete) {
         case 1: {
             // XK Message 2 read: <- e, ee, s, es  
-            printf("[DEBUG] NOISE XK MSG2 READ: Initiator processing message 2\n");
-            printf("[DEBUG] NOISE XK MSG2 READ: Current h = ");
-            for(int i = 0; i < 32; i++) printf("%02x", state->h[i]);
-            printf("\n");
+            BETANET_LOG_DEBUG("NOISE XK MSG2 READ: Initiator processing message 2");
+            BETANET_LOG_HEX("NOISE XK MSG2 READ: Current h", state->h, 32);
 
             // Step 1: Read responder's ephemeral key
-            printf("[DEBUG] NOISE XK MSG2 READ: Step 1 - Reading responder ephemeral key\n");
+            BETANET_LOG_DEBUG("NOISE XK MSG2 READ: Step 1 - Reading responder ephemeral key");
             if (remaining < BETANET_DH_PUBKEY_SIZE) {
-                printf("[DEBUG] NOISE XK MSG2 READ: Insufficient bytes for ephemeral key\n");
+                BETANET_LOG_DEBUG("NOISE XK MSG2 READ: Insufficient bytes for ephemeral key");
                 return -1;
             }
             memcpy(state->re, message + offset, BETANET_DH_PUBKEY_SIZE);
             offset += BETANET_DH_PUBKEY_SIZE;
             remaining -= BETANET_DH_PUBKEY_SIZE;
 
-            printf("[DEBUG] NOISE XK MSG2 READ: Read re = ");
-            for(int i = 0; i < 32; i++) printf("%02x", state->re[i]);
-            printf("\n");
+            BETANET_LOG_HEX("NOISE XK MSG2 READ: Read re", state->re, 32);
 
             // mix hash with responder's e: h = hash(h || re)
-            printf("[DEBUG] NOISE XK MSG2 READ: h before mixing responder e = ");
-            for(int i = 0; i < 32; i++) printf("%02x", state->h[i]);
-            printf("\n");
+            BETANET_LOG_HEX("NOISE XK MSG2 READ: h before mixing responder e", state->h, 32);
 
             if (noise_mix_hash(state, state->re, BETANET_DH_PUBKEY_SIZE) != 0) {
-                printf("[DEBUG] NOISE XK MSG2 READ: Failed to mix hash with responder e\n");
+                BETANET_LOG_DEBUG("NOISE XK MSG2 READ: Failed to mix hash with responder e");
                 return -1;
             }
 
-            printf("[DEBUG] NOISE XK MSG2 READ: h after mixing responder e = ");
-            for(int i = 0; i < 32; i++) printf("%02x", state->h[i]);
-            printf("\n");
+            BETANET_LOG_HEX("NOISE XK MSG2 READ: h after mixing responder e", state->h, 32);
 
             // Step 2: Perform ee DH
-            printf("[DEBUG] NOISE XK MSG2 READ: Step 2 - Computing ee DH\n");
-            printf("[DEBUG] NOISE XK MSG2 READ: Initiator e_priv with responder e_pub (re)\n");
-            printf("[DEBUG] NOISE XK MSG2 READ: e_priv (partial) = ");
-            for(int i = 0; i < 16; i++) printf("%02x", state->e[i]);
-            printf("...\n");
+            BETANET_LOG_DEBUG("NOISE XK MSG2 READ: Step 2 - Computing ee DH");
+            BETANET_LOG_DEBUG("NOISE XK MSG2 READ: Initiator e_priv with responder e_pub (re)");
+            BETANET_LOG_HEX("NOISE XK MSG2 READ: e_priv (partial)", state->e, 16);
 
             uint8_t dh_output[BETANET_DH_SHARED_SIZE];
             if (betanet_x25519_shared_secret(dh_output, state->e, state->re) != BETANET_CRYPTO_OK) {
-                printf("[DEBUG] NOISE XK MSG2 READ: Failed to compute ee DH\n");
+                BETANET_LOG_DEBUG("NOISE XK MSG2 READ: Failed to compute ee DH");
                 return -1;
             }
 
-            printf("[DEBUG] NOISE XK MSG2 READ: ee DH result = ");
-            for(int i = 0; i < 32; i++) printf("%02x", dh_output[i]);
-            printf("\n");
+            BETANET_LOG_HEX("NOISE XK MSG2 READ: ee DH result", dh_output, 32);
 
             // mix key with ee: ck, k = HKDF(ck, ee)
-            printf("[DEBUG] NOISE XK MSG2 READ: ck before mix_key = ");
-            for(int i = 0; i < 32; i++) printf("%02x", state->ck[i]);
-            printf("\n");
+            BETANET_LOG_HEX("NOISE XK MSG2 READ: ck before mix_key", state->ck, 32);
 
             if (noise_mix_key(state, dh_output) != 0) {
-                printf("[DEBUG] NOISE XK MSG2 READ: Failed to mix key with ee\n");
+                BETANET_LOG_DEBUG("NOISE XK MSG2 READ: Failed to mix key with ee");
                 sodium_memzero(dh_output, sizeof(dh_output));
                 return -1;
             }
 
-            printf("[DEBUG] NOISE XK MSG2 READ: ck after mix_key = ");
-            for(int i = 0; i < 32; i++) printf("%02x", state->ck[i]);
-            printf("\n");
-            printf("[DEBUG] NOISE XK MSG2 READ: k after mix_key = ");
-            for(int i = 0; i < 32; i++) printf("%02x", state->k[i]);
-            printf("\n");
+            BETANET_LOG_HEX("NOISE XK MSG2 READ: ck after mix_key", state->ck, 32);
+            BETANET_LOG_HEX("NOISE XK MSG2 READ: k after mix_key", state->k, 32);
 
             // Step 3: Read and decrypt responder's static key
-            printf("[DEBUG] NOISE XK MSG2 READ: Step 3 - Decrypting responder static key\n");
+            BETANET_LOG_DEBUG("NOISE XK MSG2 READ: Step 3 - Decrypting responder static key");
             size_t s_ciphertext_len = BETANET_DH_PUBKEY_SIZE + NOISE_TAGLEN;
             if (remaining < s_ciphertext_len) {
-                printf("[DEBUG] NOISE XK MSG2 READ: Insufficient bytes for encrypted static key (need %zu, have %zu)\n", 
+                BETANET_LOG_DEBUG("NOISE XK MSG2 READ: Insufficient bytes for encrypted static key (need %zu, have %zu)", 
                        s_ciphertext_len, remaining);
                 sodium_memzero(dh_output, sizeof(dh_output));
                 return -1;
             }
 
-            printf("[DEBUG] NOISE XK MSG2 READ: Encrypted static key (first 16 bytes) = ");
-            for(int i = 0; i < 16; i++) printf("%02x", message[offset + i]);
-            printf("...\n");
+            BETANET_LOG_HEX("NOISE XK MSG2 READ: Encrypted static key (first 16 bytes)", message + offset, 16);
 
             uint8_t s_plaintext[BETANET_DH_PUBKEY_SIZE];
             size_t s_plaintext_len = sizeof(s_plaintext);
             if (noise_decrypt_with_ad(state, s_plaintext, &s_plaintext_len, message + offset,
                                       s_ciphertext_len) != 0) {
-                printf("[DEBUG] NOISE XK MSG2 READ: Failed to decrypt static key\n");
+                BETANET_LOG_DEBUG("NOISE XK MSG2 READ: Failed to decrypt static key");
                 sodium_memzero(dh_output, sizeof(dh_output));
                 return -1;
             }
 
-            printf("[DEBUG] NOISE XK MSG2 READ: Decrypted rs = ");
-            for(int i = 0; i < 32; i++) printf("%02x", s_plaintext[i]);
-            printf("\n");
+            BETANET_LOG_HEX("NOISE XK MSG2 READ: Decrypted rs", s_plaintext, 32);
+
+            // store the decrypted responder static key
+            memcpy(state->rs, s_plaintext, BETANET_DH_PUBKEY_SIZE);
 
             // mix hash with encrypted s
             if (noise_mix_hash(state, message + offset, s_ciphertext_len) != 0) {
@@ -691,11 +619,16 @@ int noise_read_message(noise_handshake_state_t *state, const uint8_t *message, s
             offset += s_ciphertext_len;
             remaining -= s_ciphertext_len;
 
-            // perform es dh
-            if (betanet_x25519_shared_secret(dh_output, state->e, s_plaintext) !=
+            // perform es dh: DH(initiator_ephemeral_priv, responder_static_pub)
+            BETANET_LOG_DEBUG("NOISE XK MSG2 READ: Step 4 - Computing es DH");
+            BETANET_LOG_DEBUG("NOISE XK MSG2 READ: Initiator e_priv with responder s_pub (rs)");
+            if (betanet_x25519_shared_secret(dh_output, state->e, state->rs) !=
                 BETANET_CRYPTO_OK) {
+                BETANET_LOG_DEBUG("NOISE XK MSG2 READ: Failed to compute es DH");
                 return -1;
             }
+
+            BETANET_LOG_HEX("NOISE XK MSG2 READ: es DH result", dh_output, 32);
 
             // mix key with es
             if (noise_mix_key(state, dh_output) != 0) {
@@ -759,9 +692,9 @@ int noise_read_message(noise_handshake_state_t *state, const uint8_t *message, s
             offset += s_ciphertext_len;
             remaining -= s_ciphertext_len;
 
-            // perform se dh
+            // perform se dh: DH(responder_ephemeral_priv, initiator_static_pub)
             uint8_t dh_output[BETANET_DH_SHARED_SIZE];
-            if (betanet_x25519_shared_secret(dh_output, state->s, state->re) != BETANET_CRYPTO_OK) {
+            if (betanet_x25519_shared_secret(dh_output, state->e, state->rs) != BETANET_CRYPTO_OK) {
                 return -1;
             }
 
@@ -806,12 +739,19 @@ int noise_read_message(noise_handshake_state_t *state, const uint8_t *message, s
  */
 int noise_handshake_finalize(noise_handshake_state_t *state, noise_transport_state_t *transport) {
     if (state == NULL || transport == NULL) {
+        BETANET_LOG_ERROR("NOISE FINALIZE: null parameters");
         return -1;
     }
 
     if (state->message_patterns_complete < 3) {
-        return -1; // handshake not complete
+        BETANET_LOG_ERROR("NOISE FINALIZE: handshake not complete (%d/3 messages)", state->message_patterns_complete);
+        return -1;
     }
+
+    BETANET_LOG_DEBUG("NOISE FINALIZE: Starting transport key derivation");
+    BETANET_LOG_DEBUG("NOISE FINALIZE: Role: %s", state->initiator ? "INITIATOR" : "RESPONDER");
+    BETANET_LOG_HEX("NOISE FINALIZE: final ck", state->ck, 32);
+    BETANET_LOG_HEX("NOISE FINALIZE: final h", state->h, 32);
 
     // derive transport keys using split
     uint8_t output[64]; // k1 (32) + k2 (32)
@@ -829,21 +769,30 @@ int noise_handshake_finalize(noise_handshake_state_t *state, noise_transport_sta
         memcpy(transport->k_recv, output, 32);
     }
 
+    BETANET_LOG_HEX("NOISE FINALIZE: k_send", transport->k_send, 32);
+    BETANET_LOG_HEX("NOISE FINALIZE: k_recv", transport->k_recv, 32);
+
     // derive nonce salts
     if (betanet_kdf_hkdf_sha256(transport->ns_send, BETANET_AEAD_NONCE_SIZE, transport->k_send, 32,
                                 (const uint8_t *)"ns", 2, NULL, 0) != BETANET_CRYPTO_OK) {
+        BETANET_LOG_ERROR("NOISE FINALIZE: failed to derive ns_send");
         sodium_memzero(output, sizeof(output));
         return -1;
     }
 
     if (betanet_kdf_hkdf_sha256(transport->ns_recv, BETANET_AEAD_NONCE_SIZE, transport->k_recv, 32,
                                 (const uint8_t *)"ns", 2, NULL, 0) != BETANET_CRYPTO_OK) {
+        BETANET_LOG_ERROR("NOISE FINALIZE: failed to derive ns_recv");
         sodium_memzero(output, sizeof(output));
         return -1;
     }
 
     transport->n_send = 0;
     transport->n_recv = 0;
+
+    BETANET_LOG_HEX("NOISE FINALIZE: ns_send", transport->ns_send, 12);
+    BETANET_LOG_HEX("NOISE FINALIZE: ns_recv", transport->ns_recv, 12);
+    BETANET_LOG_DEBUG("NOISE FINALIZE: Transport keys derived successfully");
 
     // clear sensitive handshake state
     sodium_memzero(state, sizeof(*state));

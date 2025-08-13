@@ -111,9 +111,7 @@ int main(int argc, char **argv) {
         // receive encrypted message
         char buffer[1024];
         uint64_t request_stream_id;
-        printf("[DEBUG] SERVER: Calling betanet_recv to read client message...\n");
         ssize_t received = betanet_recv(client_sock, buffer, sizeof(buffer) - 1, &request_stream_id);
-        printf("[DEBUG] SERVER: betanet_recv returned %zd, stream_id=%llu\n", received, (unsigned long long)request_stream_id);
         if (received > 0) {
             buffer[received] = '\0';
             printf("[client %d] received encrypted message: %s\n", client_count, buffer);
